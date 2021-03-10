@@ -1,7 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote, quote_spanned, ToTokens};
+use quote::{format_ident, quote, ToTokens};
 use syn::{
     spanned::Spanned, Attribute, Error, Ident, Index, Lit, Meta, MetaNameValue, Result, Type,
 };
@@ -142,7 +142,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
         let why = why
             .ok_or_else(|| {
                 Error::new(
-                    struct_span,
+                    v.ast().ident.span(),
                     "Expected `#[message = \"Message...\"]` attribute",
                 )
             })?
@@ -152,7 +152,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
 
         branches.push(quote! {
             #pat => {
-                ::codespan_derive::__reexport::Diagnostic::< #file_id >::error()
+                ::codespan_derive::Diagnostic::< #file_id >::error()
                     .with_message( #why )
                     .with_labels(vec![ #(#labels),* ])
                     .with_notes(vec![ #(#notes),* ])
@@ -165,7 +165,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             type FileId = #file_id ;
 
             #[allow(dead_code)]
-            fn into_diagnostic(&self) -> ::codespan_derive::__reexport::Diagnostic::< #file_id > {
+            fn into_diagnostic(&self) -> ::codespan_derive::Diagnostic::< #file_id > {
                 match self {
                     #(#branches),*
                     _ => { panic!("Uninhabited type cannot be turned into a Diagnostic") }
