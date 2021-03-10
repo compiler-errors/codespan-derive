@@ -8,7 +8,7 @@ Derive macro for ergonomically creating a Diagnostic from an error macro
 3. Tag every variant with a `#[message = ""]` signalling what the error message should read.
 4. Span-like values that implement `IntoLabel` can be tagged with `#[span]` to be marked in the generated error, with an optional message like `#[span = ""]`.
 
-```
+```rust
 #[derive(IntoDiagnostic)]
 #[file_id = "SomeFileIdType"]
 enum Error {
@@ -26,7 +26,7 @@ enum Error {
 
 Then handle it somewhere like:
 
-```
+```rust
 if let Some(err) = result {
   // IntoDiagnostic derived from macro
   let diagnostic = err.into_diagnostic();
