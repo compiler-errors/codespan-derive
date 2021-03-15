@@ -3,15 +3,15 @@ use std::collections::{BTreeSet, HashMap};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
 use syn::{
-    spanned::Spanned, Attribute, Error, Ident, Index, Lit, Meta, MetaNameValue, Result, Type,
+    spanned::Spanned, Attribute, Error, Ident, Index, Lit, Meta, MetaNameValue, Path, Result, Type,
 };
 use synstructure::{decl_derive, Structure};
 
-decl_derive!([IntoDiagnostic, attributes(file_id, message, note, span)] => diagnostic_derive);
+decl_derive!([IntoDiagnostic, attributes(file_id, message, note, primary, secondary)] => diagnostic_derive);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum FieldName {
-    Named(String),
+    Named(Ident),
     Numbered(u32),
 }
 
@@ -19,7 +19,10 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
     let file_id_attr = syn::parse_str("file_id")?;
     let message_attr = syn::parse_str("message")?;
     let note_attr = syn::parse_str("note")?;
-    let span_attr = syn::parse_str("span")?;
+    let primary_attr = syn::parse_str("primary")?;
+    let secondary_attr = syn::parse_str("secondary")?;
+    let primary_style: Path = syn::parse_str("Primary")?;
+    let secondary_style: Path = syn::parse_str("Secondary")?;
 
     let struct_span = s.ast().span();
 
@@ -34,7 +37,11 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             }
 
             file_id = Some((attr_to_type(attr)?, attr.span()));
-        } else if attr.path == message_attr || attr.path == note_attr || attr.path == span_attr {
+        } else if attr.path == message_attr
+            || attr.path == note_attr
+            || attr.path == primary_attr
+            || attr.path == secondary_attr
+        {
             return Err(Error::new(
                 attr.span(),
                 format!("Unexpected attribute `{}`", attr.path.to_token_stream()),
@@ -49,6 +56,8 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
     let mut branches = vec![];
 
     for v in s.variants() {
+        // Create a mapping from field name to pattern binding name
+        // Binding names (according to synstructure) are always `__binding_#`
         let members = match &v.ast().fields {
             syn::Fields::Unit => HashMap::new(),
             syn::Fields::Named(f) => f
@@ -57,7 +66,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
                 .enumerate()
                 .map(|(i, field)| {
                     (
-                        FieldName::Named(field.ident.as_ref().unwrap().to_string()),
+                        FieldName::Named(field.ident.as_ref().unwrap().clone()),
                         format_ident!("__binding_{}", i),
                     )
                 })
@@ -75,12 +84,12 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
                 .collect(),
         };
 
-        // TokenStream of the `format!` generated, plus Span of occurrence of
+        // TokenStream of the `format!` error message, plus Span of occurrence of
         // attribute in case it's duplicated and we need to error out.
         let mut why = None;
-        // Vector of Label creations.
+        // Vector of Label creations, corresponding to `#[span]`.
         let mut labels = vec![];
-        // Vector of TokenStream of `format!` generated for notes.
+        // Vector of TokenStream of `format!` generated for `#[note]`.
         let mut notes = vec![];
 
         for attr in v.ast().attrs.iter() {
@@ -95,7 +104,10 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             } else if attr.path == note_attr {
                 let note = attr_to_format(attr, &members)?;
                 notes.push(note);
-            } else if attr.path == span_attr || attr.path == file_id_attr {
+            } else if attr.path == primary_attr
+                || attr.path == secondary_attr
+                || attr.path == file_id_attr
+            {
                 return Err(Error::new(
                     attr.span(),
                     format!("Unexpected attribute `{}`", attr.path.to_token_stream()),
@@ -107,11 +119,17 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             let binding = &b.binding;
 
             for attr in &b.ast().attrs {
-                if attr.path == span_attr {
+                if attr.path == primary_attr || attr.path == secondary_attr {
+                    let style = if attr.path == primary_attr {
+                        &primary_style
+                    } else {
+                        &secondary_style
+                    };
+
                     let label = match attr.parse_meta()? {
                         Meta::Path(_) => {
                             quote! {
-                                ::codespan_derive::IntoLabel::into_label( #binding )
+                                ::codespan_derive::IntoLabel::into_label( #binding, ::codespan_derive::LabelStyle::#style )
                             }
                         }
                         Meta::NameValue(MetaNameValue { .. }) => {
@@ -211,58 +229,67 @@ fn attr_to_format(attr: &Attribute, members: &HashMap<FieldName, Ident>) -> Resu
             let mut out = String::new();
 
             while !msg.is_empty() {
-                if let Some(i) = msg.find('{') {
+                if let Some(i) = msg.find(&['{', '}'][..]) {
                     out += &msg[..i];
-                    msg = &msg[i + 1..];
 
-                    if &msg[0..2] == "{{" {
+                    if msg[i..].starts_with("{{") {
                         out += "{{";
-                    } else if let Some(j) = msg.find('}') {
-                        let (field, rest) = if let Some(k) = msg[0..j].find(":") {
-                            (&msg[0..k], Some(&msg[k..j]))
-                        } else {
-                            (&msg[0..j], None)
-                        };
-
-                        // Now reset msg
-                        msg = &msg[j + 1..];
-
-                        let member = if let Ok(ident) = syn::parse_str::<Ident>(field) {
-                            FieldName::Named(ident.to_string())
-                        } else if let Ok(num) = syn::parse_str::<Index>(field) {
-                            FieldName::Numbered(num.index)
-                        } else {
-                            return Err(Error::new(
-                                msg_span,
-                                format!(
-                                    "Expected either a struct member name or index, got `{}`",
-                                    field
-                                ),
-                            ));
-                        };
-
-                        out += "{";
-
-                        if let Some(ident) = members.get(&member) {
-                            out += &ident.to_string();
-                            idents.insert(ident.clone());
-                        } else {
-                            return Err(Error::new(
-                                msg_span,
-                                format!(
-                                    "Struct member name or index `{}` is not a valid field",
-                                    field
-                                ),
-                            ));
-                        }
-
-                        if let Some(rest) = rest {
-                            out += rest;
-                        }
-
-                        out += "}";
+                        msg = &msg[i + 2..];
+                    } else if msg[i..].starts_with("}}") {
+                        out += "}}";
+                        msg = &msg[i + 2..];
+                    } else if msg[i..].starts_with('}') {
+                        return Err(Error::new(msg_span, "Unterminated `}` in format string"));
                     } else {
-                        return Err(Error::new(msg_span, "Unterminated `{` in format string"));
+                        msg = &msg[i + 1..];
+
+                        if let Some(j) = msg.find('}') {
+                            let (field, rest) = if let Some(k) = msg[0..j].find(":") {
+                                (&msg[0..k], Some(&msg[k..j]))
+                            } else {
+                                (&msg[0..j], None)
+                            };
+
+                            // Now reset msg
+                            msg = &msg[j + 1..];
+
+                            let member = if let Ok(ident) = syn::parse_str::<Ident>(field) {
+                                FieldName::Named(ident)
+                            } else if let Ok(num) = syn::parse_str::<Index>(field) {
+                                FieldName::Numbered(num.index)
+                            } else {
+                                return Err(Error::new(
+                                    msg_span,
+                                    format!(
+                                        "Expected either a struct member name or index, got `{}`",
+                                        field
+                                    ),
+                                ));
+                            };
+
+                            out += "{";
+
+                            if let Some(ident) = members.get(&member) {
+                                out += &ident.to_string();
+                                idents.insert(ident.clone());
+                            } else {
+                                return Err(Error::new(
+                                    msg_span,
+                                    format!(
+                                        "Struct member name or index `{}` is not a valid field",
+                                        field
+                                    ),
+                                ));
+                            }
+
+                            if let Some(rest) = rest {
+                                out += rest;
+                            }
+
+                            out += "}";
+                        } else {
+                            return Err(Error::new(msg_span, "Unterminated `{` in format string"));
+                        }
                     }
                 } else {
                     out += msg;
