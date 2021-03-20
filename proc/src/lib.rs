@@ -136,7 +136,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
                             let message = attr_to_format(&attr, &members)?;
 
                             quote! {
-                                ::codespan_derive::IntoLabel::into_label( #binding )
+                                ::codespan_derive::IntoLabel::into_label( #binding, ::codespan_derive::LabelStyle::#style )
                                     .with_message( #message )
                             }
                         }
