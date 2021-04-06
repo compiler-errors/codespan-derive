@@ -31,12 +31,12 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
     for attr in &s.ast().attrs {
         if attr.path == file_id_attr {
             if let Some((_, other_span)) = &file_id {
-                let mut err = Error::new(*other_span, "Duplicated #[file_id = ...] attribute");
+                let mut err = Error::new(*other_span, "Duplicated #[file_id(...)] attribute");
                 err.combine(Error::new(attr.span(), "Second occurrence is here"));
                 return Err(err);
             }
 
-            file_id = Some((attr_to_type(attr)?, attr.span()));
+            file_id = Some((attr.parse_args::<Type>()?, attr.span()));
         } else if attr.path == message_attr
             || attr.path == note_attr
             || attr.path == primary_attr
@@ -50,7 +50,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
     }
 
     let file_id = file_id
-        .ok_or_else(|| Error::new(struct_span, "Expected `#[file_id = \"Type\"]` attribute"))?
+        .ok_or_else(|| Error::new(struct_span, "Expected `#[file_id(Type)]` attribute"))?
         .0;
 
     let mut branches = vec![];
@@ -191,29 +191,6 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             }
         }
     }))
-}
-
-fn attr_to_type(attr: &Attribute) -> Result<Type> {
-    match attr.parse_meta()? {
-        Meta::NameValue(MetaNameValue {
-            lit: Lit::Str(ty), ..
-        }) => {
-            let ty = ty.value();
-
-            if let Ok(ty) = syn::parse_str::<Type>(&ty) {
-                Ok(ty)
-            } else {
-                Err(Error::new(
-                    attr.span(),
-                    format!("Could not parse valid Rust type from `{}`", ty),
-                ))
-            }
-        }
-        _ => Err(Error::new(
-            attr.span(),
-            format!("Expected `file_id` attribute to be of the form: `#[file_id = \"Type\"]`"),
-        )),
-    }
 }
 
 /// Turns an `#[... = "format string"]` into a `format!()` invocation
