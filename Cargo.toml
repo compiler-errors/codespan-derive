@@ -3,12 +3,14 @@ name = "codespan-derive"
 version = "0.1.0"
 authors = ["Michael Goulet <michael@errs.io>"]
 edition = "2018"
+license = "MIT"
+description = "derive(IntoDiagnostic) for easy codespan integration"
+repository = "https://github.com/compiler-errors/codespan-derive"
+readme = "README.md"
 
 [workspace]
-members = [
-    "proc",
-]
+members = ["proc"]
 
 [dependencies]
-proc = { path = "./proc/" }
 codespan-reporting = "0.11.1"
+codespan-derive-proc = { version = "=0.1.0", path = "proc" }
