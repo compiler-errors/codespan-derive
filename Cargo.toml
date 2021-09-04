@@ -1,6 +1,6 @@
 [package]
 name = "codespan-derive"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Michael Goulet <michael@errs.io>"]
 edition = "2018"
 license = "MIT"
@@ -13,4 +13,4 @@ members = ["proc"]
 
 [dependencies]
 codespan-reporting = "0.11.1"
-codespan-derive-proc = { version = "=0.1.0", path = "proc" }
+codespan-derive-proc = { version = "=0.1.1", path = "proc" }

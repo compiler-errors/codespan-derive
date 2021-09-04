@@ -7,7 +7,7 @@ use syn::{
 };
 use synstructure::{decl_derive, Structure};
 
-decl_derive!([IntoDiagnostic, attributes(file_id, message, note, primary, secondary)] => diagnostic_derive);
+decl_derive!([IntoDiagnostic, attributes(file_id, message, render, note, primary, secondary)] => diagnostic_derive);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum FieldName {
@@ -18,6 +18,7 @@ enum FieldName {
 fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
     let file_id_attr = syn::parse_str("file_id")?;
     let message_attr = syn::parse_str("message")?;
+    let render_attr = syn::parse_str("render")?;
     let note_attr = syn::parse_str("note")?;
     let primary_attr = syn::parse_str("primary")?;
     let secondary_attr = syn::parse_str("secondary")?;
@@ -38,6 +39,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
 
             file_id = Some((attr.parse_args::<Type>()?, attr.span()));
         } else if attr.path == message_attr
+            || attr.path == render_attr
             || attr.path == note_attr
             || attr.path == primary_attr
             || attr.path == secondary_attr
@@ -84,9 +86,16 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
                 .collect(),
         };
 
+        let members_ordered: Vec<_> = (0..members.len())
+            .map(|i| format_ident!("__binding_{}", i))
+            .collect();
+
         // TokenStream of the `format!` error message, plus Span of occurrence of
         // attribute in case it's duplicated and we need to error out.
         let mut why = None;
+        // TokenStream of the render function call, plus Span of occurrence of
+        // attribute in case it's duplicated and we need to error out.
+        let mut render = None;
         // Vector of Label creations, corresponding to `#[span]`.
         let mut labels = vec![];
         // Vector of TokenStream of `format!` generated for `#[note]`.
@@ -98,9 +107,37 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
                     let mut err = Error::new(*other_span, "Duplicated #[message = ...] attribute");
                     err.combine(Error::new(attr.span(), "Second occurrence is here"));
                     return Err(err);
+                } else if let Some((_, other_span)) = &render {
+                    let mut err = Error::new(
+                        *other_span,
+                        "#[message = ...] attribute not compatible with #[render(...)] attribute",
+                    );
+                    err.combine(Error::new(
+                        attr.span(),
+                        "#[render(...)] attribute occurs here",
+                    ));
+                    return Err(err);
                 }
 
                 why = Some((attr_to_format(attr, &members)?, attr.span()));
+            } else if attr.path == render_attr {
+                if let Some((_, other_span)) = &why {
+                    let mut err = Error::new(
+                        *other_span,
+                        "#[message = ...] attribute not compatible with #[render(...)] attribute",
+                    );
+                    err.combine(Error::new(
+                        attr.span(),
+                        "#[message = ...] attribute occurs here",
+                    ));
+                    return Err(err);
+                } else if let Some((_, other_span)) = &render {
+                    let mut err = Error::new(*other_span, "Duplicated #[render(...)] attribute");
+                    err.combine(Error::new(attr.span(), "Second occurrence is here"));
+                    return Err(err);
+                }
+
+                render = Some((attr_to_render(attr, &members_ordered)?, attr.span()));
             } else if attr.path == note_attr {
                 let note = attr_to_format(attr, &members)?;
                 notes.push(note);
@@ -146,6 +183,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
 
                     labels.push(label);
                 } else if attr.path == message_attr
+                    || attr.path == render_attr
                     || attr.path == note_attr
                     || attr.path == file_id_attr
                 {
@@ -157,25 +195,31 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             }
         }
 
-        let why = why
-            .ok_or_else(|| {
-                Error::new(
-                    v.ast().ident.span(),
-                    "Expected `#[message = \"Message...\"]` attribute",
-                )
-            })?
-            .0;
-
         let pat = v.pat();
 
-        branches.push(quote! {
-            #pat => {
-                ::codespan_derive::Diagnostic::< #file_id >::error()
-                    .with_message( #why )
-                    .with_labels(vec![ #(#labels),* ])
-                    .with_notes(vec![ #(#notes),* ])
-            }
-        });
+        if let Some((why, _)) = why {
+            branches.push(quote! {
+                #pat => {
+                    ::codespan_derive::Diagnostic::< #file_id >::error()
+                        .with_message( #why )
+                        .with_labels(vec![ #(#labels),* ])
+                        .with_notes(vec![ #(#notes),* ])
+                }
+            });
+        } else if let Some((render, _)) = render {
+            branches.push(quote! {
+                #pat => {
+                    #render
+                        .with_labels(vec![ #(#labels),* ])
+                        .with_notes(vec![ #(#notes),* ])
+                }
+            });
+        } else {
+            return Err(Error::new(
+                v.ast().ident.span(),
+                "Expected `#[message = \"Message...\"]` or `#[render(function)]` attribute",
+            ));
+        }
     }
 
     Ok(s.gen_impl(quote! {
@@ -286,4 +330,12 @@ fn attr_to_format(attr: &Attribute, members: &HashMap<FieldName, Ident>) -> Resu
             ),
         )),
     }
+}
+
+fn attr_to_render(attr: &Attribute, members: &Vec<Ident>) -> Result<TokenStream> {
+    let path: Path = attr.parse_args()?;
+
+    Ok(quote! {
+        #path (#(#members),*)
+    })
 }
