@@ -16,9 +16,9 @@ struct Span {
 }
 
 impl IntoLabel for Span {
-    type FileId = usize;
+    type FileId<'a> = usize;
 
-    fn into_label(&self, style: LabelStyle) -> Label<Self::FileId> {
+    fn into_label(&self, style: LabelStyle) -> Label<Self::FileId<'_>> {
         Label::new(style, self.file_id, self.range.clone())
     }
 }
