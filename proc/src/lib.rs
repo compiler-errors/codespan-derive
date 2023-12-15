@@ -200,7 +200,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
         if let Some((why, _)) = why {
             branches.push(quote! {
                 #pat => {
-                    ::codespan_derive::Diagnostic::< #file_id >::error()
+                    ::codespan_derive::Diagnostic::error()
                         .with_message( #why )
                         .with_labels(vec![ #(#labels),* ])
                         .with_notes(vec![ #(#notes),* ])
@@ -224,10 +224,10 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
 
     Ok(s.gen_impl(quote! {
         gen impl ::codespan_derive::IntoDiagnostic for @Self {
-            type FileId = #file_id ;
+            type FileId<'a> = #file_id ;
 
             #[allow(dead_code)]
-            fn into_diagnostic(&self) -> ::codespan_derive::Diagnostic::< #file_id > {
+            fn into_diagnostic(&self) -> ::codespan_derive::Diagnostic::<Self::FileId<'_>> {
                 match self {
                     #(#branches),*
                     _ => { panic!("Uninhabited type cannot be turned into a Diagnostic") }
