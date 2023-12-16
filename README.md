@@ -5,13 +5,15 @@ Derive macro for ergonomically creating a Diagnostic from an error macro
 ## Usage
 
 1. Add `#[derive(IntoDiagnostic)]` onto your error macro type.
-2. Add a `#[file_id(Type)]` to signal what the `FileId` generic type of the `Diagnostic` will be.
-3. Tag every variant with a `#[message = ""]` signalling what the error message should read.
-4. Span-like values that implement `IntoLabel` can be tagged with `#[primary]` or `#[secondary]` to be marked in the generated error, with an optional message like `#[primary = ""]`.
+2. Add a `#[file_id(Type)]` to signal what the `FileId` generic type of the `Diagnostic` will be. If your `FileId` type requires a lifetime, you can use `'a`.
+3. Add a `#[severity(Ident)]` to denote the severity of the diagnostic. `Ident` should be one of the variants of `codespan_reporting::Severity`.
+4. Tag every variant with a `#[message = ""]` signalling what the error message should read.
+5. Span-like values that implement `IntoLabel` can be tagged with `#[primary]` or `#[secondary]` to be marked in the generated error, with an optional message like `#[primary = ""]`.
 
 ```rust
 #[derive(IntoDiagnostic)]
 #[file_id(SomeFileIdType)]
+#[severity(Error)]
 enum Error {
   #[message = "Compiler found the number `{0}` is too large"]
   NumberTooLarge(usize),

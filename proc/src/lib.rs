@@ -7,7 +7,7 @@ use syn::{
 };
 use synstructure::{decl_derive, Structure};
 
-decl_derive!([IntoDiagnostic, attributes(file_id, message, render, note, primary, secondary)] => diagnostic_derive);
+decl_derive!([IntoDiagnostic, attributes(file_id, severity, message, render, note, primary, secondary)] => diagnostic_derive);
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash)]
 enum FieldName {
@@ -17,6 +17,7 @@ enum FieldName {
 
 fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
     let file_id_attr = syn::parse_str("file_id")?;
+    let severity_attr = syn::parse_str("severity")?;
     let message_attr = syn::parse_str("message")?;
     let render_attr = syn::parse_str("render")?;
     let note_attr = syn::parse_str("note")?;
@@ -28,6 +29,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
     let struct_span = s.ast().span();
 
     let mut file_id = None;
+    let mut severity = None;
 
     for attr in &s.ast().attrs {
         if attr.path == file_id_attr {
@@ -38,6 +40,14 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             }
 
             file_id = Some((attr.parse_args::<Type>()?, attr.span()));
+        } else if attr.path == severity_attr {
+            if let Some((_, other_span)) = &severity {
+                let mut err = Error::new(*other_span, "Duplicated #[severity(...)] attribute");
+                err.combine(Error::new(attr.span(), "Second occurrence is here"));
+                return Err(err);
+            }
+
+            severity = Some((attr.parse_args::<Ident>()?, attr.span()));
         } else if attr.path == message_attr
             || attr.path == render_attr
             || attr.path == note_attr
@@ -53,6 +63,9 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
 
     let file_id = file_id
         .ok_or_else(|| Error::new(struct_span, "Expected `#[file_id(Type)]` attribute"))?
+        .0;
+    let severity = severity
+        .ok_or_else(|| Error::new(struct_span, "Expected `#[severity(Ident)]` attribute"))?
         .0;
 
     let mut branches = vec![];
@@ -144,6 +157,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             } else if attr.path == primary_attr
                 || attr.path == secondary_attr
                 || attr.path == file_id_attr
+                || attr.path == severity_attr
             {
                 return Err(Error::new(
                     attr.span(),
@@ -186,6 +200,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
                     || attr.path == render_attr
                     || attr.path == note_attr
                     || attr.path == file_id_attr
+                    || attr.path == severity_attr
                 {
                     return Err(Error::new(
                         attr.span(),
@@ -200,7 +215,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
         if let Some((why, _)) = why {
             branches.push(quote! {
                 #pat => {
-                    ::codespan_derive::Diagnostic::< #file_id >::error()
+                    ::codespan_derive::Diagnostic::new(::codespan_derive::Severity::#severity)
                         .with_message( #why )
                         .with_labels(vec![ #(#labels),* ])
                         .with_notes(vec![ #(#notes),* ])
@@ -224,10 +239,10 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
 
     Ok(s.gen_impl(quote! {
         gen impl ::codespan_derive::IntoDiagnostic for @Self {
-            type FileId = #file_id ;
+            type FileId<'a> = #file_id ;
 
             #[allow(dead_code)]
-            fn into_diagnostic(&self) -> ::codespan_derive::Diagnostic::< #file_id > {
+            fn into_diagnostic(&self) -> ::codespan_derive::Diagnostic::<Self::FileId<'_>> {
                 match self {
                     #(#branches),*
                     _ => { panic!("Uninhabited type cannot be turned into a Diagnostic") }
