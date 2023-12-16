@@ -1,5 +1,5 @@
 pub use codespan_derive_proc::IntoDiagnostic;
-pub use codespan_reporting::diagnostic::{Diagnostic, Label, LabelStyle};
+pub use codespan_reporting::diagnostic::{Diagnostic, Label, LabelStyle, Severity};
 
 pub trait IntoDiagnostic {
     type FileId<'a>: 'a

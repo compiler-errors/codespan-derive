@@ -39,6 +39,22 @@ enum Error {
     },
 }
 
+#[derive(IntoDiagnostic)]
+#[file_id(usize)]
+#[severity(Warning)]
+enum Warning {
+    #[message = "This is a warning: {message}"]
+    Example {
+        message: &'static str,
+
+        #[primary = "This is a primary span"]
+        primary_span: Span,
+
+        #[secondary = "This is a secondary span"]
+        secondary_span: Span,
+    },
+}
+
 fn main() {
     let mut files: SimpleFiles<&'static str, &'static str> = SimpleFiles::new();
     let file_id = files.add("example.txt", "Test Case");
@@ -55,9 +71,23 @@ fn main() {
         },
     };
 
+    let warn = Warning::Example {
+        message: "This is a stored message",
+        primary_span: Span {
+            file_id,
+            range: 5..9,
+        },
+        secondary_span: Span {
+            file_id,
+            range: 0..4,
+        },
+    };
+
     // Basic codespan-diagnostic printing to terminal
     let writer = StandardStream::stderr(ColorChoice::Always);
     let config = codespan_reporting::term::Config::default();
     term::emit(&mut writer.lock(), &config, &files, &err.into_diagnostic())
+        .expect("Failed to show diagnostic");
+    term::emit(&mut writer.lock(), &config, &files, &warn.into_diagnostic())
         .expect("Failed to show diagnostic");
 }

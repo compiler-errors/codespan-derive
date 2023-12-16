@@ -61,6 +61,7 @@ impl IntoLabel for Span {
 #[derive(IntoDiagnostic)]
 // codespan-derive provides a lifetime argument 'a for reference-type file IDs
 #[file_id(&'a str)]
+#[severity(Error)]
 enum Error {
     #[message = "This is an error: {message}"]
     Example {
