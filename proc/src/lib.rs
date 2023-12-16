@@ -180,15 +180,17 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
                     let label = match attr.parse_meta()? {
                         Meta::Path(_) => {
                             quote! {
-                                ::codespan_derive::IntoLabel::into_label( #binding, ::codespan_derive::LabelStyle::#style )
+                                ::codespan_derive::IntoLabels::into_labels( #binding, ::codespan_derive::LabelStyle::#style )
                             }
                         }
                         Meta::NameValue(MetaNameValue { .. }) => {
                             let message = attr_to_format(&attr, &members)?;
 
                             quote! {
-                                ::codespan_derive::IntoLabel::into_label( #binding, ::codespan_derive::LabelStyle::#style )
-                                    .with_message( #message )
+                                ::codespan_derive::IntoLabels::into_labels( #binding, ::codespan_derive::LabelStyle::#style )
+                                    .into_iter()
+                                    .map(|x| x.with_message( #message ))
+                                    .collect()
                             }
                         }
                         _ => return Err(Error::new(attr.span(),
@@ -217,7 +219,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
                 #pat => {
                     ::codespan_derive::Diagnostic::new(::codespan_derive::Severity::#severity)
                         .with_message( #why )
-                        .with_labels(vec![ #(#labels),* ])
+                        #(.with_labels(#labels))*
                         .with_notes(vec![ #(#notes),* ])
                 }
             });
@@ -225,7 +227,7 @@ fn diagnostic_derive(s: Structure) -> Result<TokenStream> {
             branches.push(quote! {
                 #pat => {
                     #render
-                        .with_labels(vec![ #(#labels),* ])
+                        #(.with_labels(#labels))*
                         .with_notes(vec![ #(#notes),* ])
                 }
             });

@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use codespan_derive::{IntoDiagnostic, IntoLabel, Label, LabelStyle};
+use codespan_derive::{IntoDiagnostic, IntoLabels, Label, LabelStyle};
 use codespan_reporting::{
     files::{self, Files, SimpleFile},
     term::{
@@ -50,11 +50,11 @@ struct Span {
     range: Range<usize>,
 }
 
-impl IntoLabel for Span {
+impl IntoLabels for Span {
     type FileId<'a> = &'a str;
 
-    fn into_label(&self, style: LabelStyle) -> Label<Self::FileId<'_>> {
-        Label::new(style, self.file_id.as_str(), self.range.clone())
+    fn into_labels(&self, style: LabelStyle) -> Vec<Label<Self::FileId<'_>>> {
+        vec![Label::new(style, self.file_id.as_str(), self.range.clone())]
     }
 }
 

@@ -24,70 +24,51 @@ impl IntoLabels for Span {
 }
 
 #[derive(IntoDiagnostic)]
-#[file_id(usize)]
 #[severity(Error)]
+#[file_id(usize)]
 enum Error {
     #[message = "This is an error: {message}"]
     Example {
         message: &'static str,
 
-        #[primary = "This is a primary span"]
-        primary_span: Span,
+        #[primary = "This is a mandatory span"]
+        span: Span,
 
-        #[secondary = "This is a secondary span"]
-        secondary_span: Span,
-    },
-}
+        #[secondary = "This is an optional span"]
+        optional_span: Option<Span>,
 
-#[derive(IntoDiagnostic)]
-#[file_id(usize)]
-#[severity(Warning)]
-enum Warning {
-    #[message = "This is a warning: {message}"]
-    Example {
-        message: &'static str,
-
-        #[primary = "This is a primary span"]
-        primary_span: Span,
-
-        #[secondary = "This is a secondary span"]
-        secondary_span: Span,
+        #[secondary = "These are multiple spans"]
+        multi_span: Vec<Span>,
     },
 }
 
 fn main() {
     let mut files: SimpleFiles<&'static str, &'static str> = SimpleFiles::new();
     let file_id = files.add("example.txt", "Test Case");
+    let file_id_2 = files.add("example2.txt", "Test Case 2");
 
     let err = Error::Example {
         message: "This is a stored message",
-        primary_span: Span {
+        span: Span {
             file_id,
             range: 5..9,
         },
-        secondary_span: Span {
-            file_id,
-            range: 0..4,
-        },
-    };
-
-    let warn = Warning::Example {
-        message: "This is a stored message",
-        primary_span: Span {
-            file_id,
-            range: 5..9,
-        },
-        secondary_span: Span {
-            file_id,
-            range: 0..4,
-        },
+        optional_span: None,
+        multi_span: vec![
+            Span {
+                file_id,
+                range: 0..1,
+            },
+            Span {
+                file_id: file_id_2,
+                range: 1..2,
+            },
+        ]
     };
 
     // Basic codespan-diagnostic printing to terminal
     let writer = StandardStream::stderr(ColorChoice::Always);
     let config = codespan_reporting::term::Config::default();
     term::emit(&mut writer.lock(), &config, &files, &err.into_diagnostic())
-        .expect("Failed to show diagnostic");
-    term::emit(&mut writer.lock(), &config, &files, &warn.into_diagnostic())
         .expect("Failed to show diagnostic");
 }

@@ -9,10 +9,32 @@ pub trait IntoDiagnostic {
     fn into_diagnostic(&self) -> Diagnostic<Self::FileId<'_>>;
 }
 
-pub trait IntoLabel {
+pub trait IntoLabels {
     type FileId<'a>: 'a
     where
         Self: 'a;
 
-    fn into_label(&self, style: LabelStyle) -> Label<Self::FileId<'_>>;
+    fn into_labels(&self, style: LabelStyle) -> Vec<Label<Self::FileId<'_>>>;
+}
+
+/// Impl for optional labels
+impl<T: IntoLabels> IntoLabels for Option<T> {
+    type FileId<'a> = T::FileId<'a> where T: 'a;
+
+    fn into_labels(&self, style: LabelStyle) -> Vec<Label<Self::FileId<'_>>> {
+        self.iter()
+            .flat_map(|x| x.into_labels(style))
+            .collect()
+    }
+}
+
+/// Impl for multiple labels
+impl<T: IntoLabels> IntoLabels for Vec<T> {
+    type FileId<'a> = T::FileId<'a> where T: 'a;
+
+    fn into_labels(&self, style: LabelStyle) -> Vec<Label<Self::FileId<'_>>> {
+        self.iter()
+            .flat_map(|x| x.into_labels(style))
+            .collect()
+    }
 }
